@@ -1,236 +1,192 @@
 import pygame
 import random
-import sys
+import time
 
 # --- Configuration Constants ---
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
-TURKEY_SPEED = 3
-MAX_TURKEYS = 5
-FPS = 60
-GROUND_Y = SCREEN_HEIGHT - 50
-FONT_NAME = 'arial'
-POINT_NORMAL = 1
-POINT_COOKED = 2
+TURKEY_SPEED_MIN = 1
+TURKEY_SPEED_MAX = 3
+SPAWN_RATE = 60  # Higher means slower spawn rate
+GRAVITY = 0.5
 
-# --- Color Definitions ---
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-RED = (200, 0, 0)
-GREEN = (0, 200, 0)
-BLUE = (0, 0, 200)
+# --- Pygame Initialization ---
+pygame.init()
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("Turkey Drop Game")
+clock = pygame.time.Clock()
+font = pygame.font.Font(None, 36)
+
+# --- Load Images and Scale (Assuming images exist) ---
+try:
+    TURKEY_IMAGE_RAW = pygame.image.load('turkey.png').convert_alpha()
+    COOKED_IMAGE_RAW = pygame.image.load('cooked.png').convert_alpha()
+    # Scale images for reasonable size
+    TURKEY_IMAGE = pygame.transform.scale(TURKEY_IMAGE_RAW, (60, 60))
+    COOKED_IMAGE = pygame.transform.scale(COOKED_IMAGE_RAW, (60, 60))
+except pygame.error as e:
+    print(f"Error loading images: {e}")
+    print("Please ensure 'turkey.png' and 'cooked.png' are in the script directory.")
+    pygame.quit()
+    exit()
+
+# --- Game State Variables ---
+score = 0
+game_over = False
+cook_mode_active = False
+cook_mode_start_time = 0
+cook_mode_button_visible = False
+button_display_time = 0
+button_rect = None
+BUTTON_DURATION = 5  # seconds
 
 class Turkey(pygame.sprite.Sprite):
-    def __init__(self, screen, image_path, point_value):
+    def __init__(self, cooked=False):
         super().__init__()
-        self.screen = screen
-        self.image_path = image_path
-        self.original_image = pygame.image.load(image_path).convert_alpha()
-        self.image = pygame.transform.scale(self.original_image, (50, 50))
+        self.cooked = cooked
+        self.update_image()
         self.rect = self.image.get_rect()
         self.rect.x = random.randint(0, SCREEN_WIDTH - self.rect.width)
-        self.rect.y = 0 - self.rect.height
-        self.speed = TURKEY_SPEED
-        self.point_value = point_value
+        self.rect.y = -self.rect.height
+        self.speed = random.randint(TURKEY_SPEED_MIN, TURKEY_SPEED_MAX)
+        self.points = 1 if not self.cooked else 2
 
+    def update_image(self):
+        """Sets the correct image and point value based on cooked status."""
+        if self.cooked:
+            self.image = COOKED_IMAGE
+            self.points = 2
+        else:
+            self.image = TURKEY_IMAGE
+            self.points = 1
+    
     def update(self):
         self.rect.y += self.speed
-        if self.rect.y > GROUND_Y:
-            return True  # Indicates game over condition
-        return False
+        if self.rect.bottom >= SCREEN_HEIGHT:
+            global game_over
+            game_over = True
+            # Stop falling off the screen once game over is triggered
+            self.rect.bottom = SCREEN_HEIGHT
 
-    def change_image(self, new_image_path, new_point_value):
-        """Switches the turkey's image and point value."""
-        self.image_path = new_image_path
-        self.original_image = pygame.image.load(new_image_path).convert_alpha()
-        self.image = pygame.transform.scale(self.original_image, (50, 50))
-        self.point_value = new_point_value
+all_turkeys = pygame.sprite.Group()
 
-    def draw(self):
-        self.screen.blit(self.image, self.rect)
-
-class Button:
-    def __init__(self, x, y, width, height, text, color, hover_color):
-        self.rect = pygame.Rect(x, y, width, height)
-        self.color = color
-        self.hover_color = hover_color
-        self.text = text
-        self.font = pygame.font.SysFont(FONT_NAME, 24)
-        self.current_color = self.color
-        self.text_surf = self.font.render(text, True, WHITE)
-        self.text_rect = self.text_surf.get_rect(center=self.rect.center)
-
-    def draw(self, screen):
-        pygame.draw.rect(screen, self.current_color, self.rect, border_radius=10)
-        screen.blit(self.text_surf, self.text_rect)
-
-    def is_clicked(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.rect.collidepoint(event.pos):
-                return True
-        return False
-
-    def handle_hover(self, mouse_pos):
-        if self.rect.collidepoint(mouse_pos):
-            self.current_color = self.hover_color
-        else:
-            self.current_color = self.color
-
-def display_game_over(screen, score):
-    """Displays the game over screen and restart options."""
-    screen.fill(BLACK)
-    font_large = pygame.font.SysFont(FONT_NAME, 72, bold=True)
-    font_medium = pygame.font.SysFont(FONT_NAME, 48)
-
-    game_over_text = font_large.render("GAME OVER", True, RED)
-    score_text = font_medium.render(f"Final Score: {score}", True, WHITE)
-
-    screen.blit(game_over_text, (SCREEN_WIDTH//2 - game_over_text.get_width()//2, 150))
-    screen.blit(score_text, (SCREEN_WIDTH//2 - score_text.get_width()//2, 250))
-
-    # Restart Button
-    restart_button = Button(SCREEN_WIDTH//2 - 100, 400, 200, 60, "Try Again?", GREEN, (0, 255, 0))
-    
-    # Quit Button
-    quit_button = Button(SCREEN_WIDTH//2 - 100, 480, 200, 60, "Quit", RED, (255, 0, 0))
-
-    while True:
-        mouse_pos = pygame.mouse.get_pos()
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if restart_button.is_clicked(event):
-                return True
-            if quit_button.is_clicked(event):
-                pygame.quit()
-                sys.exit()
-        
-        screen.fill(BLACK) # Redraw elements on every loop
-        screen.blit(game_over_text, (SCREEN_WIDTH//2 - game_over_text.get_width()//2, 150))
-        screen.blit(score_text, (SCREEN_WIDTH//2 - score_text.get_width()//2, 250))
-        
-        restart_button.handle_hover(mouse_pos)
-        restart_button.draw(screen)
-        quit_button.handle_hover(mouse_pos)
-        quit_button.draw(screen)
-
-        pygame.display.flip()
-        pygame.time.Clock().tick(15)
-
-def main_game():
-    pygame.init()
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("Falling Turkeys Game")
-    clock = pygame.time.Clock()
-    font = pygame.font.SysFont(FONT_NAME, 36)
-
+def reset_game():
+    """Resets all game state variables for a new round."""
+    global score, game_over, cook_mode_active, cook_mode_start_time, cook_mode_button_visible, button_display_time, button_rect
     score = 0
     game_over = False
-    turkeys = []
-    
-    # Cook Mode state variables
     cook_mode_active = False
-    cook_mode_button = None
-    COOK_MODE_EVENT_ID = pygame.USEREVENT + 1
-    COOK_MODE_TIMEOUT_EVENT_ID = pygame.USEREVENT + 2
-    COOK_MODE_END_EVENT_ID = pygame.USEREVENT + 3
+    cook_mode_start_time = 0
+    cook_mode_button_visible = False
+    button_display_time = 0
+    button_rect = None
+    all_turkeys.empty()
 
-    # Set initial timer for random COOK MODE button appearance (2-10 seconds)
-    pygame.time.set_timer(COOK_MODE_EVENT_ID, random.randint(2000, 10000), loops=1)
+def draw_text(text, font, color, surface, x, y):
+    textobj = font.render(text, True, color)
+    textrect = textobj.get_rect()
+    textrect.topleft = (x, y)
+    surface.blit(textobj, textrect)
 
-    while not game_over:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                game_over = True
-            
-            # Handle turkey clicks
-            if event.type == pygame.MOUSEBUTTONDOWN and not cook_mode_active:
-                for turkey in list(turkeys): # Iterate over a copy to allow modification
-                    if turkey.rect.collidepoint(event.pos):
-                        score += turkey.point_value
-                        turkeys.remove(turkey)
-            
-            # Handle COOK MODE events
-            if event.type == COOK_MODE_EVENT_ID:
-                if not cook_mode_active and cook_mode_button is None:
-                    # Show button at random location for 5 seconds
-                    btn_w, btn_h = 150, 50
-                    btn_x = random.randint(0, SCREEN_WIDTH - btn_w)
-                    btn_y = random.randint(100, SCREEN_HEIGHT - btn_h - 100)
-                    cook_mode_button = Button(btn_x, btn_y, btn_w, btn_h, "COOK MODE", BLUE, (0, 0, 255))
-                    pygame.time.set_timer(COOK_MODE_TIMEOUT_EVENT_ID, 5000, loops=1)
-            
-            if event.type == COOK_MODE_TIMEOUT_EVENT_ID:
-                # Button disappeared because user was too slow
-                cook_mode_button = None
-                # Set new timer for next random appearance
-                pygame.time.set_timer(COOK_MODE_EVENT_ID, random.randint(2000, 10000), loops=1)
-            
-            if cook_mode_button and cook_mode_button.is_clicked(event):
-                # User clicked the button!
-                cook_mode_active = True
-                cook_mode_button = None
-                # Stop the button timeout timer
-                pygame.time.set_timer(COOK_MODE_TIMEOUT_EVENT_ID, 0)
-                # Change existing and new turkeys to cooked state
-                for turkey in turkeys:
-                    turkey.change_image('cooked.png', POINT_COOKED)
-                # Start 10-second cook mode duration timer
-                pygame.time.set_timer(COOK_MODE_END_EVENT_ID, 10000, loops=1)
+def create_cook_button():
+    """Generates a random location for the COOK MODE button."""
+    global button_rect, button_display_time, cook_mode_button_visible
+    # Ensure button doesn't go off-screen (approx button size 150x50)
+    x = random.randint(0, SCREEN_WIDTH - 150)
+    y = random.randint(50, SCREEN_HEIGHT - 100)
+    button_rect = pygame.Rect(x, y, 150, 50)
+    button_display_time = time.time()
+    cook_mode_button_visible = True
 
-            if event.type == COOK_MODE_END_EVENT_ID:
-                # Cook mode ends, revert everything
-                cook_mode_active = False
-                for turkey in turkeys:
-                    turkey.change_image('turkey.png', POINT_NORMAL)
-                # Set new timer for next random button appearance
-                pygame.time.set_timer(COOK_MODE_EVENT_ID, random.randint(2000, 10000), loops=1)
+# --- Main Game Loop ---
+running = True
+reset_game()
+
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if game_over:
+                if retry_button_rect.collidepoint(event.pos):
+                    reset_game()
+            else:
+                # Handle turkey clicks
+                clicked_turkeys = [s for s in all_turkeys if s.rect.collidepoint(event.pos)]
+                for turkey in clicked_turkeys:
+                    score += turkey.points
+                    turkey.kill()
                 
+                # Handle button clicks
+                if cook_mode_button_visible and button_rect.collidepoint(event.pos):
+                    cook_mode_active = True
+                    cook_mode_start_time = time.time()
+                    cook_mode_button_visible = False
+                    button_rect = None
+                    # Convert all existing turkeys to cooked
+                    for turkey in all_turkeys:
+                        turkey.cooked = True
+                        turkey.update_image()
 
-        # Game Logic: Generate new turkeys
-        if len(turkeys) < MAX_TURKEYS:
-            # Determine initial image and points based on current mode
-            img_path = 'cooked.png' if cook_mode_active else 'turkey.png'
-            points = POINT_COOKED if cook_mode_active else POINT_NORMAL
-            turkey = Turkey(screen, img_path, points)
-            turkeys.append(turkey)
-            
-        # Game Logic: Update turkey positions
-        for turkey in list(turkeys):
-            if turkey.update():
-                game_over = True
-                break
+    if not game_over:
+        # --- Game Logic ---
+        screen.fill((135, 206, 235))  # Sky blue background
+
+        # 1. Spawning turkeys randomly
+        if random.randint(0, SPAWN_RATE) == 0:
+            new_turkey = Turkey(cooked=cook_mode_active)
+            all_turkeys.add(new_turkey)
+
+        # 2. Update and draw turkeys
+        all_turkeys.update()
+        all_turkeys.draw(screen)
         
-        if game_over:
-            break
-
-        # Drawing
-        screen.fill(WHITE)
-        pygame.draw.rect(screen, (100, 100, 100), (0, GROUND_Y, SCREEN_WIDTH, SCREEN_HEIGHT - GROUND_Y)) # Ground
+        # 3. Check cook mode timing
+        if cook_mode_active:
+            if time.time() - cook_mode_start_time >= 10:
+                cook_mode_active = False
+                # Revert all existing turkeys back to normal
+                for turkey in all_turkeys:
+                    turkey.cooked = False
+                    turkey.update_image()
         
-        for turkey in turkeys:
-            turkey.draw()
+        # 4. Manage 'COOK MODE' button appearance
+        if not cook_mode_active and not cook_mode_button_visible:
+            if random.randint(0, 500) == 0: # Random chance to make button appear
+                create_cook_button()
+        
+        if cook_mode_button_visible:
+            if time.time() - button_display_time >= BUTTON_DURATION:
+                cook_mode_button_visible = False
+                button_rect = None
+            else:
+                # Draw the button
+                pygame.draw.rect(screen, (255, 100, 0), button_rect)
+                draw_text("COOK MODE", font, (255, 255, 255), screen, button_rect.x + 10, button_rect.y + 15)
 
-        if cook_mode_button:
-            cook_mode_button.handle_hover(pygame.mouse.get_pos())
-            cook_mode_button.draw(screen)
+        # 5. Draw the "ground" (where turkeys cannot cross)
+        pygame.draw.rect(screen, (34, 139, 34), (0, SCREEN_HEIGHT - 20, SCREEN_WIDTH, 20))
 
-        score_text = font.render(f"Score: {score}", True, BLACK)
-        mode_text = font.render(f"Mode: {'COOKED' if cook_mode_active else 'RAW'}", True, RED if cook_mode_active else BLACK)
-        screen.blit(score_text, (10, 10))
-        screen.blit(mode_text, (10, 50))
+        # 6. Display Score and Status
+        status_text = "COOK MODE: ACTIVE" if cook_mode_active else "Status: Normal"
+        status_color = (255, 0, 0) if cook_mode_active else (0, 0, 0)
+        draw_text(f"Score: {score}", font, (0, 0, 0), screen, 10, 10)
+        draw_text(status_text, font, status_color, screen, 10, 40)
 
+    else:
+        # --- Game Over Screen ---
+        screen.fill((220, 220, 220)) # Gray background for game over
+        draw_text("GAME OVER", pygame.font.Font(None, 100), (255, 0, 0), screen, SCREEN_WIDTH // 2 - 150, SCREEN_HEIGHT // 2 - 100)
+        draw_text(f"Final Score: {score}", font, (0, 0, 0), screen, SCREEN_WIDTH // 2 - 60, SCREEN_HEIGHT // 2)
+        
+        # Retry Button
+        retry_button_rect = pygame.Rect(SCREEN_WIDTH // 2 - 75, SCREEN_HEIGHT // 2 + 50, 150, 50)
+        pygame.draw.rect(screen, (0, 200, 0), retry_button_rect)
+        draw_text("Try Again?", font, (255, 255, 255), screen, retry_button_rect.x + 15, retry_button_rect.y + 15)
 
-        pygame.display.flip()
-        clock.tick(FPS)
+    # Update the display
+    pygame.display.flip()
+    clock.tick(60)
 
-    # --- Game Over Sequence ---
-    if display_game_over(screen, score):
-        main_game() # Recursively restart the game loop
-
-    pygame.quit()
-    sys.exit()
-
-if __name__ == '__main__':
-    main_game()
+pygame.quit()
